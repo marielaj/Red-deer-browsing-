@@ -10,8 +10,8 @@ library(dplyr)
 library(ggplot2)
 
 
-Species_data <- read_excel("~/Master/Data/Species 2009_2018 (2).xlsx")
-View(Species_2009_2018_2_)
+cdat <- read_excel("~/Master/Data/Species 2009_2018 (2).xlsx")
+View(cdat)
 
 names(cdat)
 
@@ -131,43 +131,217 @@ colSums(cdat[,16:ncol(cdat)])
 
 
 
-# Balance?
+# Balance between treatment?
 table(cdat$LocalityName, cdat$Treatment)
-# balance good
+# balance good, even numbers between observations 
 
 
 
 
 
 
-# Vascular plant species 
+# Vascular plant species, number of species - biomass 
+cdatBM <- cdat
 vasc_names <- names(cdatBM[,16:ncol(cdatBM)])
 
 
-cdatBM <- cdat
 
 
 #Species richness
 #summerer alle celler > 0
 cdatBM$SR <- rowSums(cdatBM[,vasc_names]>0, na.rm=T)
 
+#Abundance of each species
+#Sum ocurrence in all subplots per plot 
+
+#Hente inn data på "hjort" statestikk 
+library(readxl)
+Sette_dyr_Tingvoll <- read_excel("~/Master/Data/Sette dyr Tingvoll.xlsx")
+View(Sette_dyr_Tingvoll)
+
+xyplot(Sette_dyr_Tingvoll$`Sum sette hjort`~ Sette_dyr_Tingvoll$År)
+
+#Henter inn data på sett hjort per lokalisjon og vald 
+
+library(readxl)
+Sett_hjort <- read_excel("~/Master/Data/Sett hjort.xlsx")
+View(Sett_hjort)
+
+p <- xyplot(Sett_hjort$`Sett hjort`~ Sett_hjort$Year,
+            main = "Changes in population ",
+            xlab = "Year",
+            ylab = "Number of deer count")
+            
+
+#Fjerner NA?  
+Sett_hjort$`Sett hjort` [is.na(Sett_hjort$`Sett hjort`)] <- 0 
+
+# identifying locations in the xyplot
+#identify(p, what= Sett_hjort$Hjorteviltvald, labels=splist, col="red")
+
+#plotnames <- as.character(allmerged$plot_ID)
+
+#cdatBM <- colSums(Sett_hjort$`Sett hjort`)
 
 library(vegan)
 # Diversity index
 cdat$Shannon <- diversity(cdatBM[,vasc_names], index = "shannon")
 cdat$simpson <- diversity(cdatBM[,vasc_names], index = "simpson")
 plot(cdat$simpson, cdat$Shannon)
+
 plot(as.factor(cdatBM$Treatment), cdatBM$SR)
 
 
 plot(cdatBM$Year, cdatBM$SR)
 
 meanSR<-aggregate(data=cdatBM,
-          SR~ LocalityName+Year+Treatment,
+          SR~ LocalityName+Year+yse+Treatment,
           FUN = mean)
-
+#Boxplot som illusterer SR mot år + behandling 
 boxplot(meanSR$SR~as.factor(meanSR$Year)+meanSR$Treatment,las=2)
 boxplot(meanSR$SR~meanSR$Treatment+as.factor(meanSR$Year),las=2, col=c("white", "grey"))
+
+
+# ALK: Making line graph for species richness
+# First we calculate means and SE
+meanSR2 <- aggregate(data=meanSR,
+                     SR~ Year+yse+Treatment,
+                     FUN = mean)
+meanSRsd <- aggregate(data=meanSR,
+                     SR~ Year+yse+Treatment,
+                     FUN = sd)
+meanSR2$sd <- meanSRsd$SR
+meanSR2$se <- meanSR2$sd/sqrt(10)   # standard error of the mean (sd delt på rot av N)
+
+library(ggplot2)
+pd <- position_dodge(width=0.4)
+sr_plot <- ggplot(data = meanSR2, aes(x= yse, y = SR, group = Treatment, linetype = Treatment))+
+  geom_line(size=1, position=pd)+
+  geom_point(position=pd)+
+  geom_errorbar(aes(ymax = SR+se, ymin = SR-se), position=pd)+
+  xlab("Years since exclosure")+
+  ylab("Species richness")+
+  scale_x_continuous(breaks = seq(-1,9,2))+
+  theme_cleveland()
+  
+sr_plot
+
+boxplot(meanSR$SR~as.factor(meanSR$Year)) 
+
+boxplot(meanSR$SR~meanSR$Treatment,
+        main = "Species richness - treatment",
+        xlab = "Treatment",
+        ylab = "Species richness",
+        col = "orange",
+        border = "green",
+        #horizontal = TRUE,
+        notch = TRUE)
+
+boxplot(meanSR$SR ~as.factor(meanSR$LocalityName), las=2)
+boxplot(meanSR$SR ~meanSR$Treatment + as.factor(meanSR$LocalityName), las=2)
+
+hist(meanSR$SR, main= " ", xlab= "Species richness", ylab="Frequency", 
+     col="lightgrey", xlim=c(0.0,9), ylim=c(0,30))
+
+#Boxplot som viser endringen i Shannon div. index mot år + behandling 
+boxplot(cdat$Shannon~cdat$Year+cdat$Treatment, las=2, col=c("white", "grey"))
+boxplot(cdat$Shannon~cdat$Treatment+cdat$Year, las=2, col=c("white", "grey"))
+
+boxplot(cdat$Shannon ~cdat$Treatment + as.factor(cdat$LocalityName), las=2)
+
+hist(cdat$Shannon, main= " ", xlab= "Shannon's diversity", ylab="Frequency", 
+     col="lightgrey", xlim=c(0.0,3), ylim=c(0,200)) 
+#Shannon diversity appears to be normally distributed. 
+
+
+#Boxplot som viser endringen i Simpson div. index mot år + behandling 
+boxplot(cdat$simpson~cdat$Year+cdat$Treatment, las=2, col=c("white", "grey"))
+boxplot(cdat$simpson~cdat$Treatment+cdat$Year, las=2, col=c("white", "grey"))
+
+boxplot(cdat$simpson ~cdat$Treatment + as.factor(cdat$LocalityName), las=2)
+
+#Enkle boksplot
+boxplot(cdat$Shannon)
+boxplot(cdat$simpson)
+boxplot(cdatBM$SR)
+
+
+#Validate data using linear mixed effect model 
+
+install.packages("lme4")
+install.packages("arm")
+library(lme4)
+library(arm)
+library(lmerTest)
+
+#inserting deer density data
+cdatBM$sett_hjort <- Sett_hjort$`Sett hjort`[match(paste0(cdatBM$LocalityCode, cdatBM$Year), 
+                                                   paste0(Sett_hjort$LocalityCode, Sett_hjort$Year))]
+
+model1 <- lmer(cdatBM$SR ~ cdatBM$yse * cdatBM$Treatment + (1|cdatBM$LocalityCode), data = cdatBM) 
+summary(model1)
+
+
+levels(as.factor(cdatBM$Treatment))
+cdatBM$Treatment_f <- factor(cdatBM$Treatment, levels = c("B", "UB"))
+model1ALK <- lmer(cdatBM$SR ~ cdatBM$Treatment_f * cdatBM$sett_hjort + (1|cdatBM$LocalityCode), data = cdatBM[cdatBM$yse==7,]) 
+model2ALK <- lmer(cdatBM$SR ~ cdatBM$Treatment_f + (1|cdatBM$LocalityCode), data = cdatBM[cdatBM$yse==7,]) 
+model3ALK <- lmer(cdatBM$SR ~ cdatBM$yse * cdatBM$sett_hjort + (1|cdatBM$LocalityCode), data = cdatBM[cdatBM$Treatment=="B",]) 
+
+summary(model1ALK)
+summary(model3ALK)
+
+
+AIC(model1)
+
+model2 <- lmer(cdatBM$SR ~ cdatBM$Year * cdatBM$Treatment + Sett_hjort$`Sett hjort` + (1|cdatBM$LocalityCode)) 
+summary(model2)
+
+#Likelihood Ratio Test as a means to attain p-values
+#The null model 
+
+model1.null = lmer(cdatBM$SR ~ cdatBM$Treatment + (1|cdatBM$LocalityCode), data = cdatBM,
+                              REML = FALSE)
+anova(model1.null, model1)
+
+
+
+
+# the coefficients of the model
+
+coef(model1)
+resid(model1)
+fitted(model1)
+
+
+
+
+# Our model is what is called a random intercept model. In this
+#model, we account for baseline-differences in pitch, but we assume that whatever
+#the effect of diversity is, it’s going to be the same for all treatments and years.
+
+
+#Undersøke korrelasjon mellom variabler? 
+
+# checking correlations between the constrainig variables to identify possibly redundant variables
+
+library("ggpubr")
+ggscatter(cdatBM, x = "LocalityCode", y = "Treatment", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Species richness", ylab = "treatment")
+
+
+cor(as.factor(meanSR$LocalityName), as.factor(meanSR$Year))
+cor(as.factor(meanSR$LocalityName, meanSR$Treatment))
+cor(as.factor(meanSR$LocalityName, meanSR$SR))
+
+cor(as.factor(meanSR$Year, meanSR$Treatment))
+cor(as.factor(meanSR$Year, meanSR$SR))
+
+cor(meanSR$Treatment, meanSR$SR)
+
+
 
 
 # the following is not adapted to the current dataset, but included for reference:
@@ -185,16 +359,19 @@ library(vegan)
 
 # betadiversity and how it changes with time since exlosure
 
-head(wide)
-head(wide2)
+head(cdat)
+head(cdatBM)
 
 
-pairs <- interaction(wide2$LocalityName, wide2$yse, wide2$Treatment)
-dist_out <- cbind(pairs, wide2)
+pairs <- interaction(cdatBM$LocalityName, cdatBM$yse, cdatBM$Treatment)
+dist_out <- cbind(pairs, cdatBM)
 dist_out2 <- NULL
 
+str(dist_out)
+dist_out$LocalityCode <- as.numeric(dist_out$LocalityCode)
+
 for(i in unique(dist_out$pairs)){
-  temp <- vegdist(x = subset(dist_out[,7:ncol(dist_out)], pairs == i), method="jaccard")     # dissimilarity
+  temp <- vegdist(x = subset(dist_out[,17:ncol(dist_out)], pairs == i), method="jaccard")     # dissimilarity
   temp2 <- cbind( 
     unique(dist_out$Region[dist_out$pairs == i]),             
     unique(dist_out$LocalityName[dist_out$pairs == i]), 
